@@ -32,6 +32,89 @@ API Gateway + Lambda + DynamoDB. Three different IaC tools (Terraform, CloudForm
 
 Terraform creates AWS infrastructure; Ansible configures the host. The same playbook deploys to EC2 or bare-metal ARM64 devices. PostgreSQL 16 on each instance. Three different languages (Node.js, Python, C#).
 
+## Deployment Patterns
+
+All nine repos follow a standardized credential management and deployment strategy that mirrors the [ironskillet-infra](https://github.com/dlf-dds/ironskillet-infra) conventions. Every repo can be deployed with two commands:
+
+```bash
+direnv allow        # One-time: loads AWS credentials, region, project defaults
+./scripts/deploy    # Handles aws-vault, IaC, and verification automatically
+```
+
+### Credential Flow
+
+Every repo includes a `.envrc` that configures the shell environment via [direnv](https://direnv.net/):
+
+| Variable | Value | Purpose |
+| -------- | ----- | ------- |
+| `AWS_VAULT_KEYCHAIN_NAME` | `login` | Routes aws-vault to the macOS login keychain |
+| `AWS_DEFAULT_REGION` | `eu-central-1` | Default region for all AWS operations |
+| `AWS_REGION` | `eu-central-1` | Explicit region (some SDKs check this instead) |
+| `PROJECT` | `ironskillet` | Project name used in resource naming |
+| `ENVIRONMENT` | `dev` | Environment name |
+
+The `.envrc` also adds `./scripts` to `PATH` and sources `.envrc.local` (gitignored) for local overrides.
+
+All AWS operations run through `aws-vault exec ironskillet --no-session --`, which injects short-lived STS credentials without touching `~/.aws/credentials`. The deploy scripts handle this wrapping automatically.
+
+### Deploy Scripts by Architecture Group
+
+Each repo includes a `scripts/deploy` script tailored to its deployment pattern:
+
+**EC2 + Terraform + Ansible** (mesh-dash, field-report, asset-ledger):
+
+```bash
+./scripts/deploy                  # Full: Terraform + Ansible + health check
+./scripts/deploy terraform        # Terraform only
+./scripts/deploy ansible          # Ansible only (host must exist)
+./scripts/deploy ansible deploy   # Ansible deploy tag only (fast redeploy)
+```
+
+The script resolves Terraform outputs (IP, SSH key secret), retrieves the SSH key from Secrets Manager on first run, exports the required environment variables, and runs `ansible-playbook` with proper credentials.
+
+**Serverless -- Terraform** (magic-8ball):
+
+```bash
+./scripts/deploy                  # init + apply + verify
+./scripts/deploy plan             # Preview changes
+./scripts/deploy destroy          # Tear down
+```
+
+**Serverless -- CloudFormation** (dad-jokes):
+
+```bash
+./scripts/deploy                  # package + upload + deploy + register
+./scripts/deploy package          # Package Lambda only
+./scripts/deploy status           # Check stack status
+```
+
+**Serverless -- Pulumi** (color-palette):
+
+```bash
+./scripts/deploy                  # pulumi up
+./scripts/deploy preview          # Preview changes
+./scripts/deploy destroy          # Tear down
+```
+
+**EC2 + Terraform only** (spin-min, spin-full, juno):
+
+```bash
+./scripts/deploy                  # init + apply + verify
+./scripts/deploy plan             # Preview changes
+./scripts/deploy destroy          # Tear down
+```
+
+### Secrets Management
+
+The three edge-portable services (mesh-dash, field-report, asset-ledger) fetch application secrets from [OpenBao](https://github.com/dlf-dds/openbao) at deploy time via the AppRole authentication pattern:
+
+1. Each service has a scoped AppRole in OpenBao (read-only access to `secret/data/<service>/*`)
+2. AppRole bootstrap credentials (role_id + secret_id) are stored in AWS Secrets Manager
+3. During CI or manual deploy, Ansible authenticates to OpenBao and reads the secrets
+4. Secrets are injected into the host configuration (database passwords, JWT keys, session secrets)
+
+The serverless and Wasm repos have no runtime secrets -- they are stateless or use DynamoDB/S3 directly.
+
 ## Compliance Integration
 
 Every repo integrates with the ironskillet compliance system through:
