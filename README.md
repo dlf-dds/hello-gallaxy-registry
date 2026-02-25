@@ -106,7 +106,7 @@ The script resolves Terraform outputs (IP, SSH key secret), retrieves the SSH ke
 
 ### Secrets Management
 
-The three edge-portable services (mesh-dash, field-report, asset-ledger) fetch application secrets from [OpenBao](https://github.com/fullmetalskillet/openbao) at deploy time via the AppRole authentication pattern:
+The three edge-portable services (mesh-dash, field-report, asset-ledger) fetch application secrets from [OpenBao](https://github.com/fullmetalskillet/ironskillet-secrets-manager) at deploy time via the AppRole authentication pattern:
 
 1. Each service has a scoped AppRole in OpenBao (read-only access to `secret/data/<service>/*`)
 2. AppRole bootstrap credentials (role_id + secret_id) are stored in AWS Secrets Manager
